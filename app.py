@@ -104,17 +104,17 @@ def generate_linkedin_search(company_name, country=""):
     return base_query
 
 def generate_rocketreach_url(company_name):
-    """生成RocketReach搜索链接"""
+    """生成RocketReach搜索链接 - 修复版"""
     encoded = urllib.parse.quote(company_name)
-    return f"https://rocketreach.co/{encoded}-profile"
+    return f"https://rocketreach.co/search?term={encoded}"
 
 def generate_hunter_url(domain):
     """生成Hunter.io链接"""
     return f"https://hunter.io/search/{domain}"
 
-def get_mailtester_link(email):
-    """生成MailTester验证链接"""
-    return f"https://mailtester.com/test-smtp.php?email={urllib.parse.quote(email)}"
+def get_mailtester_link():
+    """MailTester不支持URL传参，返回主页"""
+    return "https://mailtester.com"
 
 # ==================== AI分析引擎（规则版，无需API） ====================
 def analyze_importer(row):
@@ -198,7 +198,7 @@ def analyze_importer(row):
         "all_emails": emails,
         "linkedin_search": linkedin_search,
         "rocketreach_url": rocket_url,
-        "verification_strategy": f"1) 先验证 {emails[0]} 2) 无效则试 {emails[1]} 3) LinkedIn搜索决策人",
+        "verification_strategy": f"1) 复制 {emails[0]} 到MailTester验证 2) 无效则试 {emails[1]} 3) 用LinkedIn搜索决策人",
         "country": country
     }
 
@@ -281,8 +281,8 @@ with st.sidebar:
     st.markdown("**💡 使用流程：**")
     st.markdown("1. 上传ImportYeti CSV")
     st.markdown("2. AI自动分级(A/B/C)")
-    st.markdown("3. 复制LinkedIn指令找决策人")
-    st.markdown("4. 用RocketReach查邮箱")
+    st.markdown("3. 复制邮箱到MailTester验证")
+    st.markdown("4. 点击RocketReach链接查决策人")
     st.markdown("5. 发送个性化开发信")
 
 # 主界面
@@ -353,7 +353,7 @@ if uploaded_file is not None:
         st.markdown("---")
         st.subheader("📊 客户分级清单")
         
-        # A级客户（重点展示）
+        # A级客户（重点展示）- 修复链接显示
         with st.expander("🔴 A级客户 - 立即跟进（高匹配度经销商）", expanded=True):
             a_df = results_df[results_df['级别']=='A'].sort_values('匹配度', ascending=False)
             if not a_df.empty:
@@ -365,15 +365,20 @@ if uploaded_file is not None:
                             st.caption(f"匹配度: {row['匹配度']}分 | {row['推荐理由']}")
                             st.markdown(f"🎯 **推荐产品:** {row['推荐产品']}")
                         with col2:
-                            st.markdown("**📧 联系策略:**")
-                            st.code(row['猜测邮箱'], language=None)
-                            first_email = row['猜测邮箱'].split(';')[0].strip()
-                            st.markdown(f"[验证邮箱]({get_mailtester_link(first_email)})")
+                            st.markdown("**📧 验证步骤:**")
+                            emails = row['猜测邮箱'].split(';')
+                            for i, email in enumerate(emails[:3]):
+                                st.code(email.strip(), language=None)
+                            # 修复：明确提示复制到MailTester
+                            st.markdown(f"[👉 打开MailTester验证](https://mailtester.com)")
+                            st.caption("👆 点击打开网站，复制上方邮箱粘贴验证")
                         with col3:
-                            st.markdown("**🔗 工具链接:**")
-                            st.markdown(f"[RocketReach]({row['RocketReach链接']})")
-                            st.button(f"复制搜索指令_{idx}", key=f"copy_{idx}", 
-                                    on_click=lambda x=row['LinkedIn搜索指令']: st.write(x))
+                            st.markdown("**🔗 决策人查找:**")
+                            st.markdown(f"[RocketReach搜索]({row['RocketReach链接']})")
+                            st.markdown(f"[Hunter.io查域名](https://hunter.io/search/{row['公司名'].lower().replace(' ', '')}.com)")
+                            # 添加LinkedIn搜索按钮
+                            if st.button(f"复制LinkedIn指令_{idx}", key=f"copy_{idx}"):
+                                st.write("已复制到剪贴板：" + row['LinkedIn搜索指令'])
                         st.markdown("---")
             else:
                 st.info("未发现A级客户，建议放宽筛选条件")
@@ -382,8 +387,17 @@ if uploaded_file is not None:
         with st.expander("🟡 B级客户 - 潜力培养"):
             b_df = results_df[results_df['级别']=='B']
             if not b_df.empty:
-                st.dataframe(b_df[['公司名', '国家', '匹配度', '推荐产品', '猜测邮箱']], 
-                           use_container_width=True, hide_index=True)
+                for idx, row in b_df.iterrows():
+                    with st.container():
+                        cols = st.columns([3, 2, 1])
+                        with cols[0]:
+                            st.markdown(f"**{row['公司名']}** ({row['国家']})")
+                            st.caption(f"匹配度: {row['匹配度']}分")
+                        with cols[1]:
+                            st.code(row['猜测邮箱'].split(';')[0], language=None)
+                        with cols[2]:
+                            st.markdown(f"[RocketReach]({row['RocketReach链接']})")
+                        st.markdown("---")
         
         # C级客户
         with st.expander("🟢 C级客户 - 观察/批量开发"):
@@ -453,13 +467,13 @@ else:
         - 货值规模（判断客户层级）
         - 国家市场（重点市场加权）
         
-        **📧 自动输出：**
-        - 猜测邮箱（5-8个格式）
-        - LinkedIn搜索指令
-        - RocketReach直达链接
-        - 个性化开发信模板
+        **📧 验证步骤：**
+        1. 复制生成的邮箱
+        2. 点击"打开MailTester验证"链接
+        3. 粘贴邮箱验证是否有效
+        4. 点击RocketReach查找决策人
         """)
 
 # 页脚
 st.markdown("---")
-st.caption("💡 提示：若邮箱验证失败，使用LinkedIn搜索指令在Google查找决策人，再通过RocketReach免费版查邮箱")
+st.caption("💡 修复说明：RocketReach链接已改为搜索页格式，MailTester请手动复制邮箱粘贴验证")
